@@ -1,0 +1,29 @@
+{
+  "input_shape": [
+    1,
+    1,
+    3,
+    128,
+    128
+  ],
+  "results": [
+    {
+      "mode": "segmentation",
+      "torch_cpu_seconds": 0.1334480874997098,
+      "coreml_seconds": 0.004430679199867882,
+      "speedup_vs_torch": 30.11910397477865
+    },
+    {
+      "mode": "alpha",
+      "torch_cpu_seconds": 0.13266238340002018,
+      "coreml_seconds": 0.004431033300352283,
+      "speedup_vs_torch": 29.93937856198757
+    },
+    {
+      "mode": "matting_lite",
+      "torch_cpu_seconds": 0.131188895800733,
+      "coreml_seconds": 0.0044965375011088325,
+      "speedup_vs_torch": 29.175536903313322
+    }
+  ]
+}

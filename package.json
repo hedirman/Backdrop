@@ -1,0 +1,9 @@
+{
+  "name": "backdrop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Quality-first web video background remover MVP",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

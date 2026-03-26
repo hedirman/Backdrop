@@ -1,0 +1,9 @@
+{
+  "mode": "single_frame_matting",
+  "height": 256,
+  "width": 256,
+  "downsample_ratio": 0.35,
+  "package_path": "/Users/hedirman/Documents/CodexArtifacts/BGremover/experiments/coreml_lab/artifacts/rvm_single_frame_matting_256x256.mlpackage",
+  "torch_version": "2.11.0",
+  "coremltools_version": "9.0"
+}

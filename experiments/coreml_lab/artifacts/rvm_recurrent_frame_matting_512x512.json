@@ -1,0 +1,35 @@
+{
+  "mode": "recurrent_frame_matting",
+  "height": 512,
+  "width": 512,
+  "downsample_ratio": 0.35,
+  "state_shapes": [
+    [
+      1,
+      16,
+      90,
+      90
+    ],
+    [
+      1,
+      20,
+      45,
+      45
+    ],
+    [
+      1,
+      40,
+      23,
+      23
+    ],
+    [
+      1,
+      64,
+      12,
+      12
+    ]
+  ],
+  "package_path": "/Users/hedirman/Documents/CodexArtifacts/BGremover/experiments/coreml_lab/artifacts/rvm_recurrent_frame_matting_512x512.mlpackage",
+  "torch_version": "2.11.0",
+  "coremltools_version": "9.0"
+}

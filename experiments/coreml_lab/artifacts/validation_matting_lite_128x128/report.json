@@ -1,0 +1,66 @@
+{
+  "mode": "matting_lite",
+  "model_path": "experiments/coreml_lab/artifacts/rvm_single_frame_matting_lite_128x128.mlpackage",
+  "coreml": {
+    "alpha": {
+      "shape": [
+        1,
+        1,
+        128,
+        128
+      ],
+      "dtype": "float32",
+      "min": 0.0,
+      "max": 0.0,
+      "mean": 0.0
+    },
+    "foreground_residual": {
+      "shape": [
+        1,
+        3,
+        128,
+        128
+      ],
+      "dtype": "float32",
+      "min": 0.0,
+      "max": 0.393310546875,
+      "mean": 0.022804753854870796
+    }
+  },
+  "torch": {
+    "foreground_residual": {
+      "shape": [
+        1,
+        3,
+        128,
+        128
+      ],
+      "dtype": "float32",
+      "min": 0.0,
+      "max": 0.3930755853652954,
+      "mean": 0.023135358467698097
+    },
+    "alpha": {
+      "shape": [
+        1,
+        1,
+        128,
+        128
+      ],
+      "dtype": "float32",
+      "min": 0.0,
+      "max": 0.0,
+      "mean": 0.0
+    }
+  },
+  "diff": {
+    "alpha": {
+      "mae": 0.0,
+      "max_abs": 0.0
+    },
+    "foreground_residual": {
+      "mae": 0.0004858447646256536,
+      "max_abs": 0.012477481737732887
+    }
+  }
+}

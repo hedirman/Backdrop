@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Backdrop</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div class="hero-title-wrap">
+          <h1>Backdrop</h1>
+        </div>
+      </header>
+
+      <main class="layout">
+        <section class="panel" id="settings-panel">
+          <label class="upload" for="video-input" id="upload-card">
+            <input id="video-input" type="file" accept="video/*" />
+            <small id="upload-detail"></small>
+            <span id="upload-title">Drop video here or click to browse</span>
+          </label>
+
+          <div class="grid two">
+            <label class="full slim-control">
+              <span class="label-row">Engine<button type="button" class="info-icon" data-tooltip="Switch between the available background-removal engines. Each engine trades off speed, stability, and edge quality differently." aria-label="Explain engine">i</button></span>
+              <select id="engine-select">
+                <option value="coreml_preview" selected>Core ML Preview</option>
+                <option value="coreml_quality">Core ML Quality</option>
+                <option value="ppmattingv2">PP-MattingV2</option>
+                <option value="modnet">MODNet</option>
+                <option value="rvm">RVM</option>
+              </select>
+            </label>
+
+            <label>
+              <span class="label-row">BG mode<button type="button" class="info-icon" data-tooltip="Choose whether the removed background becomes transparent, a solid color, or a replacement image." aria-label="Explain background mode">i</button></span>
+              <select id="background-mode">
+                <option value="transparent">Transparent</option>
+                <option value="color" selected>Solid color</option>
+                <option value="image">Image</option>
+              </select>
+            </label>
+
+            <label>
+              <span class="label-row">BG color<button type="button" class="info-icon" data-tooltip="Sets the background color placed behind the extracted subject when Background mode is set to Solid color." aria-label="Explain background color">i</button></span>
+              <input id="background-color" type="color" value="#f4efe6" />
+            </label>
+
+            <label class="full">
+              <span class="label-row">BG image<button type="button" class="info-icon" data-tooltip="Upload an image to place behind the extracted subject after the background is removed." aria-label="Explain background image">i</button></span>
+              <input id="background-image" type="file" accept="image/*" />
+            </label>
+          </div>
+
+          <div class="grid two sliders">
+            <label>
+              <span class="label-row">Process FPS<button type="button" class="info-icon" data-tooltip="Controls how many frames per second are processed. Lower values finish faster, while higher values preserve smoother motion." aria-label="Explain process FPS">i</button></span>
+              <input id="process-fps" type="range" min="6" max="60" value="12" />
+              <strong id="process-fps-value">12</strong>
+            </label>
+
+            <label>
+              <span class="label-row">Shadow softness<button type="button" class="info-icon" data-tooltip="Adds a soft shadow around the extracted subject to help it sit more naturally on the new background." aria-label="Explain shadow softness">i</button></span>
+              <input id="shadow" type="range" min="0" max="30" value="10" />
+              <strong id="shadow-value">10px</strong>
+            </label>
+
+            <label id="rvm-detail-control" class="full">
+              <span class="label-row">RVM detail<button type="button" class="info-icon" data-tooltip="Changes the internal detail level for the Classic RVM engine. Higher values keep more edge detail but increase processing time." aria-label="Explain RVM detail">i</button></span>
+              <input id="rvm-detail" type="range" min="15" max="100" value="35" />
+              <strong id="rvm-detail-value">0.35x</strong>
+            </label>
+
+            <label>
+              <span class="label-row">Mask threshold<button type="button" class="info-icon" data-tooltip="Raises or lowers the alpha cutoff after the model runs. Higher values remove more faint edge pixels and can reduce background residue." aria-label="Explain mask threshold">i</button></span>
+              <input id="threshold" type="range" min="0" max="40" value="2" />
+              <strong id="threshold-value">0.02</strong>
+            </label>
+
+            <label>
+              <span class="label-row">Edge feather<button type="button" class="info-icon" data-tooltip="Softens the mask edge slightly to reduce hard cut lines and make the extraction feel smoother." aria-label="Explain edge feather">i</button></span>
+              <input id="feather" type="range" min="0" max="24" value="2" />
+              <strong id="feather-value">2px</strong>
+            </label>
+
+            <label>
+              <span class="label-row">Mask strength<button type="button" class="info-icon" data-tooltip="Amplifies or relaxes the extracted alpha mask across all engines. Useful when the subject looks too faint, too thin, or too thick." aria-label="Explain mask strength">i</button></span>
+              <input id="mask-strength" type="range" min="60" max="180" value="100" />
+              <strong id="mask-strength-value">1.00x</strong>
+            </label>
+
+            <label>
+              <span class="label-row">Temporal smooth<button type="button" class="info-icon" data-tooltip="Blends mask values between neighboring processed frames to reduce shimmer, flicker, and unstable edges." aria-label="Explain temporal smooth">i</button></span>
+              <input id="temporal-smooth" type="range" min="0" max="80" value="8" />
+              <strong id="temporal-smooth-value">0.08</strong>
+            </label>
+
+            <label>
+              <span class="label-row">Edge shrink<button type="button" class="info-icon" data-tooltip="Tightens or expands the matte border after extraction. Positive values trim halos, while negative values preserve more edge detail." aria-label="Explain edge shrink">i</button></span>
+              <input id="edge-shrink" type="range" min="-12" max="12" value="2" />
+              <strong id="edge-shrink-value">2px</strong>
+            </label>
+
+            <label>
+              <span class="label-row">Foreground boost<button type="button" class="info-icon" data-tooltip="Brightens the extracted subject slightly after compositing so it stands out more cleanly from the new background." aria-label="Explain foreground boost">i</button></span>
+              <input id="foreground-boost" type="range" min="80" max="140" value="104" />
+              <strong id="foreground-boost-value">1.04x</strong>
+            </label>
+          </div>
+
+          <div class="finishing-row">
+            <div class="primary-actions">
+              <button id="start-button" class="primary">Process</button>
+              <button id="cancel-button" disabled>Cancel</button>
+            </div>
+          </div>
+
+          <div class="actions secondary-actions">
+            <button id="pause-button" disabled>Play</button>
+            <button id="loop-button" disabled>Loop Off</button>
+            <button id="export-button" disabled>Export MP4</button>
+          </div>
+
+        </section>
+
+        <section class="panel preview-panel">
+          <div class="panel-head">
+            <h2>Preview</h2>
+          </div>
+
+          <div class="preview-stack">
+            <canvas id="output-canvas" aria-label="Background removed preview"></canvas>
+            <video id="preview-video" playsinline muted hidden></video>
+          </div>
+
+          <div class="status-block preview-status-block">
+            <div class="status-column">
+              <div class="status-line">
+                <span>Status</span>
+                <strong id="status">Upload a video to begin.</strong>
+              </div>
+              <div class="status-line">
+                <span>Completed in</span>
+                <strong id="finished-meta">Waiting for run</strong>
+              </div>
+            </div>
+            <div class="status-column">
+              <div class="status-line">
+                <span>Engine</span>
+                <strong id="engine-meta">Core ML Preview</strong>
+              </div>
+              <div class="status-line">
+                <span>Render size</span>
+                <strong id="render-meta">Waiting for source</strong>
+              </div>
+            </div>
+          </div>
+
+          <video id="source-video" playsinline muted preload="metadata" hidden></video>
+          <canvas id="source-canvas" hidden></canvas>
+          <canvas id="mask-canvas" hidden></canvas>
+        </section>
+      </main>
+
+      <footer class="site-footer">
+        <p>Crafted by Hedirman of Futurebureau</p>
+      </footer>
+    </div>
+
+    <div id="tooltip-layer" class="tooltip-layer" hidden></div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

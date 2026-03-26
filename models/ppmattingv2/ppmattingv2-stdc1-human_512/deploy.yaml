@@ -1,0 +1,15 @@
+Deploy:
+  input_shape:
+  - 1
+  - 3
+  - 512
+  - 512
+  model: model.pdmodel
+  params: model.pdiparams
+  transforms:
+  - type: LoadImages
+  - max_short: 512
+    type: LimitShort
+  - mult_int: 32
+    type: ResizeToIntMult
+  - type: Normalize

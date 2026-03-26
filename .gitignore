@@ -1,0 +1,8 @@
+node_modules
+.DS_Store
+.venv/
+.venv314/
+experiments/coreml_lab/.venv312/
+__pycache__/
+*.pyc
+tmp/
