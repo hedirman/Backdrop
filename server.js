@@ -13,13 +13,30 @@ const labRoot = path.join(__dirname, "experiments", "coreml_lab");
 const workRoot = path.join(os.tmpdir(), "backdrop");
 const outputRoot = path.join(workRoot, "outputs");
 const maxJsonBytes = 20 * 1024 * 1024;
-const maxUploadBytes = 512 * 1024 * 1024;
+const maxUploadBytes = 3 * 1024 * 1024 * 1024;
 const maxImageBytes = 25 * 1024 * 1024;
 const rvmBatchMaxDimension = 1463;
+const maxVideoDurationSeconds = 2 * 60 * 60;
 function buildScaleFilter(maxDimension) {
   return `scale=w='trunc(min(${maxDimension},iw)/2)*2':h='trunc((trunc(min(${maxDimension},iw)/2)*2)/a/2)*2'`;
 }
 
+function cleanupWorkRootContents() {
+  if (!fs.existsSync(workRoot)) {
+    return;
+  }
+
+  fs.readdirSync(workRoot).forEach((entry) => {
+    fs.rmSync(path.join(workRoot, entry), {
+      recursive: true,
+      force: true,
+      maxRetries: 10,
+      retryDelay: 120,
+    });
+  });
+}
+
+cleanupWorkRootContents();
 fs.mkdirSync(outputRoot, { recursive: true });
 const exportJobs = new Map();
 const engineSessions = new Map();
@@ -132,7 +149,7 @@ function readRequestBody(req, maxBytes) {
     req.on("data", (chunk) => {
       totalBytes += chunk.length;
       if (totalBytes > maxBytes) {
-        reject(new Error("Request body is too large."));
+        reject(new Error("Video file is too large. The current upload limit is about 2 GB."));
         req.destroy();
         return;
       }
@@ -141,6 +158,57 @@ function readRequestBody(req, maxBytes) {
 
     req.on("end", () => resolve(Buffer.concat(chunks)));
     req.on("error", reject);
+  });
+}
+
+function streamRequestToFile(req, destinationPath, maxBytes) {
+  return new Promise((resolve, reject) => {
+    const output = fs.createWriteStream(destinationPath);
+    let totalBytes = 0;
+    let settled = false;
+
+    const finish = (error = null, bytesWritten = totalBytes) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      output.destroy();
+      if (error) {
+        fs.rmSync(destinationPath, { force: true });
+        reject(error);
+      } else {
+        resolve({ bytesWritten });
+      }
+    };
+
+    req.on("data", (chunk) => {
+      totalBytes += chunk.length;
+      if (totalBytes > maxBytes) {
+        finish(new Error("Video file is too large. The current upload limit is 3 GB."));
+        req.destroy();
+        return;
+      }
+      if (!output.write(chunk)) {
+        req.pause();
+      }
+    });
+
+    output.on("drain", () => {
+      req.resume();
+    });
+
+    req.on("end", () => {
+      output.end(() => {
+        if (!totalBytes) {
+          finish(new Error("No video payload received."));
+          return;
+        }
+        finish(null, totalBytes);
+      });
+    });
+
+    req.on("error", (error) => finish(error));
+    output.on("error", (error) => finish(error));
   });
 }
 
@@ -237,6 +305,22 @@ function requestWorker(controller, payload, options = {}) {
     controller.pending.set(id, { resolve, reject, onProgress: options.onProgress });
     child.stdin.write(`${JSON.stringify({ id, ...payload })}\n`);
   });
+}
+
+function stopWorker(controller) {
+  if (!controller.process) {
+    return;
+  }
+
+  const child = controller.process;
+  controller.process = null;
+  controller.buffer = "";
+  resetPending(controller, new Error(`${controller.name} worker was cleared.`));
+  child.kill("SIGTERM");
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function runProcess(command, args, cwd = workRoot) {
@@ -569,21 +653,23 @@ async function processImage(body) {
   }
 }
 
-async function processVideo(buffer, filename, options = {}, onProgress = null) {
+async function processVideo(inputPath, filename, options = {}, onProgress = null) {
   const engine = normalizeEngine(options.engine);
   const jobId = randomUUID();
   const jobDir = path.join(workRoot, jobId);
-  const inputPath = path.join(jobDir, filename || "upload.mp4");
   const sourceFramesDir = path.join(jobDir, "source-frames");
   const outputFramesDir = path.join(jobDir, "output-frames");
   const outputPath = path.join(outputRoot, `${jobId}.mp4`);
 
+  fs.mkdirSync(jobDir, { recursive: true });
   fs.mkdirSync(sourceFramesDir, { recursive: true });
   fs.mkdirSync(outputFramesDir, { recursive: true });
-  fs.writeFileSync(inputPath, buffer);
 
   try {
     const metadata = await probeVideo(inputPath);
+    if (metadata.duration > maxVideoDurationSeconds) {
+      throw new Error("Video is too long. The current maximum length is 2 hours.");
+    }
     const requestedFps = clampInteger(options.processFps, 6, 60, metadata.fps || 12);
     const processFps = Math.max(1, requestedFps);
     const scaleFilter = getEngineFamily(engine) === "coreml"
@@ -721,6 +807,8 @@ async function processVideo(buffer, filename, options = {}, onProgress = null) {
       String(processFps),
       "-i",
       path.join(outputFramesDir, outputFramePattern),
+      "-vf",
+      `scale=${metadata.width}:${metadata.height}`,
       "-r",
       String(processFps),
       "-c:v",
@@ -765,10 +853,14 @@ async function processVideo(buffer, filename, options = {}, onProgress = null) {
     };
   } finally {
     fs.rmSync(jobDir, { recursive: true, force: true });
+    const uploadDir = path.dirname(inputPath);
+    if (path.basename(uploadDir).startsWith("upload-")) {
+      fs.rmSync(uploadDir, { recursive: true, force: true });
+    }
   }
 }
 
-function createVideoJob(buffer, filename, options) {
+function createVideoJob(inputPath, filename, options) {
   const jobId = randomUUID();
   const job = {
     id: jobId,
@@ -781,7 +873,7 @@ function createVideoJob(buffer, filename, options) {
   };
   videoJobs.set(jobId, job);
 
-  processVideo(buffer, filename, options, (update) => {
+  processVideo(inputPath, filename, options, (update) => {
     job.status = "processing";
     job.progress = Math.max(job.progress, Math.min(100, Number(update.progress) || 0));
     job.phase = update.phase || job.phase;
@@ -801,6 +893,19 @@ function createVideoJob(buffer, filename, options) {
   });
 
   return job;
+}
+
+async function clearCacheAndMemory() {
+  engineSessions.clear();
+  videoJobs.clear();
+  exportJobs.clear();
+
+  [coremlWorker, ppmattingWorker, modnetWorker, rvmWorker].forEach(stopWorker);
+  await delay(150);
+  cleanupWorkRootContents();
+  fs.mkdirSync(outputRoot, { recursive: true });
+
+  return { ok: true, cleared: true };
 }
 
 http.createServer(async (req, res) => {
@@ -930,11 +1035,10 @@ http.createServer(async (req, res) => {
         "-c:v",
         "libx264",
         "-preset",
-        job.purpose === "preview" ? "ultrafast" : "medium",
-        "-crf",
-        job.purpose === "preview" ? "20" : "18",
-        "-pix_fmt",
-        "yuv420p",
+        job.purpose === "preview" ? "ultrafast" : "slow",
+        ...(job.purpose === "preview"
+          ? ["-crf", "20", "-pix_fmt", "yuv420p"]
+          : ["-crf", "0", "-pix_fmt", "yuv444p"]),
         "-movflags",
         "+faststart",
         outputPath,
@@ -970,19 +1074,18 @@ http.createServer(async (req, res) => {
 
   if (req.method === "POST" && url.pathname === "/api/process-video") {
     try {
-      const buffer = await readRequestBody(req, maxUploadBytes);
-      if (!buffer.length) {
-        sendJson(res, 400, { error: "No video payload received." });
-        return;
-      }
-
       const filenameHeader = String(req.headers["x-file-name"] || "upload.mp4");
       const safeName = path.basename(filenameHeader).replace(/[^\w.\-]+/g, "_");
       const engine = String(req.headers["x-engine"] || "coreml").toLowerCase();
       const processFps = req.headers["x-process-fps"];
       const rvmDetail = req.headers["x-rvm-detail"];
+      const uploadId = randomUUID();
+      const uploadDir = path.join(workRoot, `upload-${uploadId}`);
+      const inputPath = path.join(uploadDir, safeName || "upload.mp4");
+      fs.mkdirSync(uploadDir, { recursive: true });
+      await streamRequestToFile(req, inputPath, maxUploadBytes);
 
-      const result = await processVideo(buffer, safeName, {
+      const result = await processVideo(inputPath, safeName, {
         engine,
         processFps,
         rvmDetail,
@@ -997,19 +1100,18 @@ http.createServer(async (req, res) => {
 
   if (req.method === "POST" && url.pathname === "/api/process-video/start") {
     try {
-      const buffer = await readRequestBody(req, maxUploadBytes);
-      if (!buffer.length) {
-        sendJson(res, 400, { error: "No video payload received." });
-        return;
-      }
-
       const filenameHeader = String(req.headers["x-file-name"] || "upload.mp4");
       const safeName = path.basename(filenameHeader).replace(/[^\w.\-]+/g, "_");
       const engine = String(req.headers["x-engine"] || "coreml").toLowerCase();
       const processFps = req.headers["x-process-fps"];
       const rvmDetail = req.headers["x-rvm-detail"];
+      const uploadId = randomUUID();
+      const uploadDir = path.join(workRoot, `upload-${uploadId}`);
+      const inputPath = path.join(uploadDir, safeName || "upload.mp4");
+      fs.mkdirSync(uploadDir, { recursive: true });
+      await streamRequestToFile(req, inputPath, maxUploadBytes);
 
-      const job = createVideoJob(buffer, safeName, {
+      const job = createVideoJob(inputPath, safeName, {
         engine,
         processFps,
         rvmDetail,
@@ -1040,6 +1142,15 @@ http.createServer(async (req, res) => {
       result: job.result,
       error: job.error,
     });
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/clear-cache") {
+    try {
+      sendJson(res, 200, await clearCacheAndMemory());
+    } catch (error) {
+      sendJson(res, 500, { error: error.message });
+    }
     return;
   }
 

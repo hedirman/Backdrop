@@ -26,6 +26,7 @@ const elements = {
   startButton: document.querySelector("#start-button"),
   pauseButton: document.querySelector("#pause-button"),
   loopButton: document.querySelector("#loop-button"),
+  clearCacheButton: document.querySelector("#clear-cache-button"),
   cancelButton: document.querySelector("#cancel-button"),
   exportButton: document.querySelector("#export-button"),
   status: document.querySelector("#status"),
@@ -52,6 +53,8 @@ const elements = {
 const outputContext = elements.outputCanvas.getContext("2d", { alpha: true });
 const sourceContext = elements.sourceCanvas.getContext("2d", { willReadFrequently: true });
 const maskContext = elements.maskCanvas.getContext("2d", { willReadFrequently: true });
+const maxVideoDurationSeconds = 2 * 60 * 60;
+const maxVideoUploadBytes = 3 * 1024 * 1024 * 1024;
 
 const state = {
   videoUrl: "",
@@ -135,6 +138,17 @@ function formatElapsed(ms) {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+}
+
+function toAsciiHeaderValue(value, fallback = "upload.mp4") {
+  const source = String(value || "").trim();
+  if (!source) {
+    return fallback;
+  }
+
+  const normalized = source.normalize("NFKD").replace(/[^\x20-\x7E]+/g, "_");
+  const collapsed = normalized.replace(/\s+/g, " ").trim();
+  return collapsed || fallback;
 }
 
 function updateTimingDebug() {
@@ -236,6 +250,7 @@ function updateButtons() {
   elements.loopButton.disabled = !hasProcessedFrames || state.processingVideo || state.recording;
   elements.loopButton.textContent = state.loopPlayback ? "Loop On" : "Loop Off";
   elements.loopButton.classList.toggle("is-on", state.loopPlayback);
+  elements.clearCacheButton.disabled = state.processingVideo || state.recording;
   elements.cancelButton.disabled = !state.processingVideo;
   elements.exportButton.disabled = !hasProcessedFrames || state.recording || state.processingVideo;
   if (elements.engineMeta) {
@@ -408,6 +423,21 @@ function probeVideoMetadata(fileUrl) {
 }
 
 async function loadVideo(file) {
+  if (file.size > maxVideoUploadBytes) {
+    state.videoReady = false;
+    state.selectedFileName = "";
+    updateUploadState(false);
+    if (elements.playbackMeta) {
+      elements.playbackMeta.textContent = "Video exceeds upload limit.";
+    }
+    setStatus("Video file is too large. The current upload limit is 3 GB.");
+    if (elements.uploadDetail) {
+      elements.uploadDetail.textContent = "Choose a file under 3 GB.";
+    }
+    updateButtons();
+    return;
+  }
+
   if (state.videoUrl) {
     URL.revokeObjectURL(state.videoUrl);
   }
@@ -435,6 +465,9 @@ async function loadVideo(file) {
 
   try {
     const metadata = await probeVideoMetadata(state.videoUrl);
+    if (metadata.duration > maxVideoDurationSeconds) {
+      throw new Error("Video is too long. The current maximum length is 2 hours.");
+    }
     syncProcessedFps();
     resizeCanvases(metadata.width, metadata.height);
     state.processedDuration = metadata.duration;
@@ -467,6 +500,13 @@ async function loadVideo(file) {
 
 async function handleVideoReady() {
   if (!state.videoReady && elements.sourceVideo.videoWidth && elements.sourceVideo.videoHeight) {
+    if (elements.sourceVideo.duration > maxVideoDurationSeconds) {
+      state.videoReady = false;
+      state.selectedFileName = "";
+      updateUploadState(false);
+      setStatus("Video is too long. The current maximum length is 2 hours.");
+      return;
+    }
     syncProcessedFps();
     resizeCanvases(elements.sourceVideo.videoWidth, elements.sourceVideo.videoHeight);
     state.processedDuration = elements.sourceVideo.duration;
@@ -814,6 +854,34 @@ function clearProcessedFrames() {
   updateButtons();
 }
 
+async function clearCacheAndMemory() {
+  stopPreview();
+  await closeBackendSession();
+  state.backendReady = false;
+  state.backendInfo = null;
+  state.sessionId = "";
+  state.latestFramePayload = null;
+  state.processingFrame = false;
+  state.cancelProcessing = false;
+  resetTemporalMask();
+  clearProcessedFrames();
+
+  const response = await fetch("/api/clear-cache", {
+    method: "POST",
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || "Could not clear cached files and workers.");
+  }
+
+  setStatus("Cache cleared.");
+  setFinishedMeta("Waiting for run");
+  if (elements.playbackMeta) {
+    elements.playbackMeta.textContent = "Cleared cached previews and workers.";
+  }
+}
+
 function seekVideo(targetTime) {
   return new Promise((resolve, reject) => {
     const onSeeked = () => {
@@ -962,7 +1030,7 @@ async function processVideoWithBatch() {
       method: "POST",
       headers: {
         "Content-Type": videoBlob.type || "application/octet-stream",
-        "X-File-Name": elements.uploadTitle.textContent || "backdrop-preview.mp4",
+        "X-File-Name": toAsciiHeaderValue(state.selectedFileName, "backdrop-preview.mp4"),
         "X-Engine": engine,
         "X-Process-Fps": String(state.processedFps),
         "X-Rvm-Detail": String(getRvmDownsampleRatio())
@@ -1376,6 +1444,16 @@ elements.loopButton.addEventListener("click", () => {
   state.loopPlayback = !state.loopPlayback;
   elements.previewVideo.loop = state.loopPlayback;
   updateButtons();
+});
+elements.clearCacheButton.addEventListener("click", async () => {
+  try {
+    await clearCacheAndMemory();
+  } catch (error) {
+    console.error(error);
+    setStatus(error.message);
+  } finally {
+    updateButtons();
+  }
 });
 elements.cancelButton.addEventListener("click", () => {
   if (!state.processingVideo) {
